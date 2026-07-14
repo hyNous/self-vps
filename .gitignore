@@ -1,0 +1,59 @@
+# Local sensitive client / monitoring credentials (never publish)
+hynous-seoul.yaml
+beszel.txt
+
+# Local agent / handoff workflow
+.handoff/
+.grok/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.env
+secrets/
+*.secret
+*.secrets
+
+# Certificates and private keys
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.jks
+privkey*
+fullchain*
+chain.pem
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+*.ppk
+
+# Local config that may contain credentials
+*_local.yaml
+*_local.yml
+*_local.json
+*credentials*
+*credential*
+*token*
+!**/token*.md
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.code-workspace
+
+# Logs and temp
+*.log
+logs/
+tmp/
+temp/
