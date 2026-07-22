@@ -1,0 +1,38 @@
+services:
+  beszel:
+    image: henrygd/beszel:latest
+    container_name: beszel
+    restart: unless-stopped
+    environment:
+      APP_URL: ${BESZEL_APP_URL}
+    ports:
+      - "127.0.0.1:8090:8090"
+    volumes:
+      - ./data/beszel:/beszel_data
+      - ./data/beszel-socket:/beszel_socket
+
+  beszel-agent:
+    image: henrygd/beszel-agent:latest
+    container_name: beszel-agent
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      - beszel
+    environment:
+      LISTEN: /beszel_socket/beszel.sock
+      HUB_URL: http://localhost:8090
+      KEY: ${BESZEL_KEY}
+      TOKEN: ${BESZEL_TOKEN}
+    volumes:
+      - ./data/beszel-agent:/var/lib/beszel-agent
+      - ./data/beszel-socket:/beszel_socket
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:2
+    container_name: uptime-kuma
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - ./data/uptime-kuma:/app/data

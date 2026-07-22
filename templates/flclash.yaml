@@ -1,0 +1,25 @@
+mixed-port: 7890
+allow-lan: false
+mode: rule
+log-level: info
+ipv6: false
+
+proxies:
+  - name: Seoul-Trojan
+    type: trojan
+    server: __NODE_DOMAIN__
+    port: 443
+    password: "__TROJAN_PASSWORD__"
+    sni: __NODE_DOMAIN__
+    skip-cert-verify: false
+    udp: true
+
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - Seoul-Trojan
+      - DIRECT
+
+rules:
+  - MATCH,PROXY

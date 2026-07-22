@@ -1,5 +1,5 @@
 # Local sensitive client / monitoring credentials (never publish)
-hynous-seoul.yaml
+*-seoul.yaml
 beszel.txt
 
 # Local agent / handoff workflow
@@ -57,3 +57,8 @@ Desktop.ini
 logs/
 tmp/
 temp/
+
+# Generated deployment state and backups
+backups/
+optional/monitoring/.env
+optional/monitoring/data/

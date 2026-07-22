@@ -1,0 +1,40 @@
+name: validate
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check shell syntax
+        run: bash -n scripts/*.sh templates/xray-cert-hook.sh
+      - name: Run ShellCheck
+        run: shellcheck scripts/*.sh templates/xray-cert-hook.sh
+      - name: Check JSON
+        run: python -m json.tool templates/xray-config.json >/dev/null
+      - name: Check monitoring Compose
+        run: docker compose --env-file optional/monitoring/.env.example -f optional/monitoring/compose.yaml config >/dev/null
+      - name: Check backup archive policy
+        run: |
+          root="$(mktemp -d)"
+          archive="$root/self-vps-test.tar.gz"
+          mkdir -p "$root/tree/etc/self-vps" "$root/tree/etc/letsencrypt/live/node.example.com"
+          printf 'NODE_DOMAIN=node.example.com\n' >"$root/tree/etc/self-vps/node.env"
+          printf 'certificate\n' >"$root/tree/etc/letsencrypt/live/node.example.com/fullchain.pem"
+          tar -C "$root/tree" -czf "$archive" etc/self-vps etc/letsencrypt
+          (cd "$root" && sha256sum "$(basename "$archive")" >"$(basename "$archive").sha256")
+          bash scripts/restore.sh --check "$archive"
+          mkdir -p "$root/bad/tmp"
+          printf 'not allowed\n' >"$root/bad/tmp/evil"
+          tar -C "$root/bad" -czf "$root/bad.tar.gz" tmp/evil
+          (cd "$root" && sha256sum bad.tar.gz >bad.tar.gz.sha256)
+          if bash scripts/restore.sh --check "$root/bad.tar.gz"; then
+            echo "restore policy accepted an unexpected path" >&2
+            exit 1
+          fi
