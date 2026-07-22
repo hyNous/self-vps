@@ -34,8 +34,9 @@ TROJAN_PASSWORD="${TROJAN_PASSWORD:-}"
 [[ "$NODE_DOMAIN" != *.example.com ]] || die "replace the example NODE_DOMAIN"
 [[ "$ACME_EMAIL" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] ||
   die "ACME_EMAIL is not valid"
-[[ "$SSH_PORT" =~ ^[0-9]+$ ]] && ((SSH_PORT >= 1 && SSH_PORT <= 65535)) ||
+if ! [[ "$SSH_PORT" =~ ^[0-9]+$ ]] || ((SSH_PORT < 1 || SSH_PORT > 65535)); then
   die "SSH_PORT must be between 1 and 65535"
+fi
 
 if [[ -e "$xray_config" && ! -f "$managed_dir/managed" ]]; then
   die "$xray_config already exists and is not managed by this project"

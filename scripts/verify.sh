@@ -37,9 +37,16 @@ for service in ssh nginx xray certbot.timer; do
   check_service "$service"
 done
 
-nginx -t >/dev/null 2>&1 && pass "nginx configuration" || fail "nginx configuration"
-/usr/local/bin/xray run -test -config /usr/local/etc/xray/config.json >/dev/null 2>&1 &&
-  pass "xray configuration" || fail "xray configuration"
+if nginx -t >/dev/null 2>&1; then
+  pass "nginx configuration"
+else
+  fail "nginx configuration"
+fi
+if /usr/local/bin/xray run -test -config /usr/local/etc/xray/config.json >/dev/null 2>&1; then
+  pass "xray configuration"
+else
+  fail "xray configuration"
+fi
 
 for port in 80 443 8080; do
   if ss -lntH "( sport = :$port )" | grep -q .; then
@@ -56,13 +63,19 @@ else
   fail "BBR is not active"
 fi
 
-curl --fail --silent --show-error --max-time 15 \
-  --resolve "$NODE_DOMAIN:80:127.0.0.1" "http://$NODE_DOMAIN/" >/dev/null &&
-  pass "Nginx HTTP site" || fail "Nginx HTTP site"
+if curl --fail --silent --show-error --max-time 15 \
+  --resolve "$NODE_DOMAIN:80:127.0.0.1" "http://$NODE_DOMAIN/" >/dev/null; then
+  pass "Nginx HTTP site"
+else
+  fail "Nginx HTTP site"
+fi
 
-curl --fail --silent --show-error --max-time 15 \
-  --resolve "$NODE_DOMAIN:443:127.0.0.1" "https://$NODE_DOMAIN/" >/dev/null &&
-  pass "Xray TLS fallback" || fail "Xray TLS fallback"
+if curl --fail --silent --show-error --max-time 15 \
+  --resolve "$NODE_DOMAIN:443:127.0.0.1" "https://$NODE_DOMAIN/" >/dev/null; then
+  pass "Xray TLS fallback"
+else
+  fail "Xray TLS fallback"
+fi
 
 if ((failures > 0)); then
   echo "$failures check(s) failed." >&2

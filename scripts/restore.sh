@@ -2,10 +2,10 @@
 set -Eeuo pipefail
 
 mode="${1:-}"
-[[ "$mode" == "--check" || "$mode" == "--confirm" ]] && [[ -n "${2:-}" ]] || {
+if [[ "$mode" != "--check" && "$mode" != "--confirm" ]] || [[ -z "${2:-}" ]]; then
   echo "Usage: $0 --check|--confirm /path/to/self-vps-TIMESTAMP.tar.gz" >&2
   exit 2
-}
+fi
 if [[ "$mode" == "--confirm" && ${EUID} -ne 0 ]]; then
   echo "Error: restore requires sudo" >&2
   exit 1
