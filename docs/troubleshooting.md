@@ -38,6 +38,71 @@ sudo ss -tin '( sport = :443 )'
 sudo journalctl -u xray -n 100 --no-pager
 ~~~
 
+## 国内直连 22/443 超时，但境外可连、Cloudflare Tunnel 正常
+
+如果服务器上 Xray/Nginx 都在运行，境外节点能连 443，而中国大陆直连 22/443/8443 都是 SYN 到达、SYN-ACK 回不来，优先判断为 IP/路径级回程丢包，不是 Trojan 密码或端口问题。不要继续换端口或反复改密码。
+
+使用 Cloudflare Tunnel 绕开直连入站：
+
+- `cdn.example.com` → `http://localhost:8082` 承载 VLESS/WS
+- `ssh.example.com` → `tcp://localhost:22` 承载 SSH，并加 Cloudflare Access
+
+WebSocket 手工测试必须用 HTTP/1.1；HTTP/2 没有 Upgrade 语义，返回 404 属于正常。
+
+## FlClash 显示节点不可用，但服务端没有请求日志
+
+先确认 FlClash 真正加载的是哪份 profile，而不是只看“导入成功”。检查：
+
+- 当前 profile 是否是自建节点，而不是旧机场订阅；
+- `autoRun` 是否开启；
+- TUN 是否造成回环，可先关闭 TUN 用 7890 测试；
+- DNS fallback 是否指向 `1.1.1.1` / `dns.google`，国内可能超时；
+- 是否有 `DOMAIN-SUFFIX,example.com,DIRECT` 之类的规则。
+
+服务端 ground truth：
+
+~~~bash
+sudo tail -f /var/log/nginx/access.log | grep '<your-ws-path>'
+sudo journalctl -u xray -f
+~~~
+
+客户端：
+
+~~~powershell
+curl.exe -x http://127.0.0.1:7890 https://api.ipify.org
+~~~
+
+如果服务端完全没有客户端请求，问题在 FlClash 本地配置/规则/DNS，不在 VPS。
+
+## SSH 提示 Permission denied (publickey)
+
+这是预期的 key-only 行为：
+
+- 密码登录已关闭；
+- root SSH 已关闭；
+- 只允许 `ubuntu` 公钥登录，然后 `sudo -i`。
+
+确认使用 Cloudflare Tunnel 和正确的私钥：
+
+~~~powershell
+ssh hynous
+~~~
+
+如果失败，用 OrcaTerm 或腾讯云 VNC 进入，检查：
+
+~~~bash
+sudo sshd -T | grep -E 'passwordauthentication|permitrootlogin|pubkeyauthentication'
+sudo ls -l /home/ubuntu/.ssh/authorized_keys
+sudo journalctl -u ssh -n 100 --no-pager
+~~~
+
+## Cloudflare 访问返回登录页或 403
+
+- `ssh.example.com` 应该被 Cloudflare Access 保护；
+- `cdn.example.com` 不应被 Access 保护，否则 VLESS 会被登录页挡住；
+- 检查是否有 `*.example.com` 的通配 Access 应用覆盖到 cdn；
+- 检查 WAF / Bot Fight Mode / Under Attack 是否对 WebSocket upgrade 发 challenge。
+
 ## 节点速度慢
 
 先区分 VPS 本机出口和“客户端到 VPS”链路：

@@ -1,5 +1,6 @@
 # Local sensitive client / monitoring credentials (never publish)
 *-seoul.yaml
+*seoul*.yaml
 beszel.txt
 
 # Local agent / handoff workflow

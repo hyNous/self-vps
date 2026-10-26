@@ -39,6 +39,28 @@
           "minVersion": "1.2"
         }
       }
+    },
+    {
+      "tag": "vless-ws-in",
+      "listen": "127.0.0.1",
+      "port": 10086,
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "__VLESS_UUID__",
+            "email": "hyn-cdn"
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "ws",
+        "security": "none",
+        "wsSettings": {
+          "path": "__VLESS_WS_PATH__"
+        }
+      }
     }
   ],
   "outbounds": [

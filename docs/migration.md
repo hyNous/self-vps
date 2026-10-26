@@ -29,8 +29,8 @@ sudo bash scripts/verify.sh
 2. 修改本地 .env 中的 NODE_DOMAIN 和 ACME_EMAIL。
 3. 保留原 TROJAN_PASSWORD 可减少客户端改动，或显式轮换密码。
 4. 重新执行安装脚本，签发新证书并渲染 Xray/Nginx 配置。
-5. 更新 FlClash 的 server、sni 和密码。
-6. 更新 Uptime Kuma 监控项及 Cloudflare Tunnel 公共主机名。
+5. 更新 FlClash 的 Trojan `server`/`sni`/密码；如果使用 VLESS/WS，同时更新 CDN `server`、`uuid`、`ws-opts.path` 和 `Host`。
+6. 更新 Uptime Kuma 监控项、Cloudflare Tunnel 的 `cdn`/`ssh`/`monitor`/`status` Public Hostname，以及 `ssh` 的 Access 策略。
 7. 验证新域名后再删除旧 DNS 和旧证书。
 
 ~~~bash
@@ -54,3 +54,5 @@ curl.exe -x http://127.0.0.1:7890 https://api.ipify.org
 ~~~
 
 当前 Beta 不承诺无停机迁移。需要无停机时，应另行设计 DNS-01 证书签发、双节点并行和客户端切换策略。
+
+Cloudflare Tunnel 为 token 模式时，ingress 在 Cloudflare 云端托管；本地 `cloudflared` 只负责建立出站连接。迁移或更换域名后，记得同步云端 Public Hostname 和 Access 策略。

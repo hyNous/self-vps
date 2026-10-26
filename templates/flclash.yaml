@@ -4,22 +4,69 @@ mode: rule
 log-level: info
 ipv6: false
 
+dns:
+  enable: true
+  ipv6: false
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  fake-ip-filter:
+    - '*.lan'
+    - '*.local'
+    - '__NODE_DOMAIN__'
+    - '__CDN_DOMAIN__'
+    - '+.msftconnecttest.com'
+    - '+.msftncsi.com'
+  default-nameserver:
+    - 223.5.5.5
+    - 119.29.29.29
+  nameserver:
+    - 223.5.5.5
+    - 119.29.29.29
+  proxy-server-nameserver:
+    - 223.5.5.5
+    - 119.29.29.29
+
 proxies:
+  - name: Seoul-CDN
+    type: vless
+    server: __CDN_DOMAIN__
+    port: 443
+    uuid: __VLESS_UUID__
+    network: ws
+    tls: true
+    udp: false
+    servername: __CDN_DOMAIN__
+    skip-cert-verify: false
+    client-fingerprint: chrome
+    ws-opts:
+      path: __VLESS_WS_PATH__
+      headers:
+        Host: __CDN_DOMAIN__
+
   - name: Seoul-Trojan
     type: trojan
     server: __NODE_DOMAIN__
     port: 443
     password: "__TROJAN_PASSWORD__"
     sni: __NODE_DOMAIN__
-    skip-cert-verify: false
+    alpn:
+      - http/1.1
     udp: true
+    skip-cert-verify: false
 
 proxy-groups:
   - name: PROXY
     type: select
     proxies:
+      - Seoul-CDN
       - Seoul-Trojan
       - DIRECT
 
 rules:
+  - DOMAIN-SUFFIX,local,DIRECT
+  - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
+  - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
+  - IP-CIDR,172.16.0.0/12,DIRECT,no-resolve
+  - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve
+  - GEOIP,CN,DIRECT
   - MATCH,PROXY

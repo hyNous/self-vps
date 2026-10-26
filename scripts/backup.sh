@@ -29,13 +29,20 @@ trap restart_monitoring EXIT
 
 paths=(
   etc/self-vps
-  etc/nginx/sites-available/self-vps
   etc/letsencrypt
-  etc/modules-load.d/bbr.conf
-  etc/sysctl.d/99-bbr.conf
   usr/local/etc/xray/config.json
   usr/local/etc/xray/cert
 )
+for path in \
+  etc/nginx/sites-available/self-vps \
+  etc/nginx/sites-available/vless-cdn \
+  etc/modules-load.d/bbr.conf \
+  etc/sysctl.d/99-bbr.conf \
+  etc/sysctl.d/99-tcp-tune.conf \
+  etc/sysctl.conf \
+  etc/ssh/sshd_config.d/00-hynous-hardening.conf; do
+  [[ -e "/$path" ]] && paths+=("$path")
+done
 [[ -d "$monitoring_dir" ]] && paths+=(opt/self-vps-monitoring)
 
 tar -C / -czf "$archive" "${paths[@]}"

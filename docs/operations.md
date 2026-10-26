@@ -1,5 +1,64 @@
 # 日常运维
 
+## SSH 入口
+
+服务端默认只允许公钥登录。Cloudflare Tunnel 可用时，本机使用 `~/.ssh/config` 里的 `hynous` 主机：
+
+~~~bash
+ssh hynous
+sudo -i
+~~~
+
+如果还没配置 `ProxyCommand`，可以手动：
+
+~~~bash
+cloudflared access tcp --hostname ssh.example.com --url 127.0.0.1:12222
+ssh -p 12222 ubuntu@127.0.0.1
+~~~
+
+不要依赖密码登录；`PermitRootLogin` 和 `PasswordAuthentication` 已经关闭。OrcaTerm / 腾讯云 VNC 作为 break-glass。`ssh.example.com` 应加 Cloudflare Access；`cdn.example.com` 不要加。
+
+## VLESS/WS 与 Cloudflare Tunnel
+
+~~~bash
+sudo ss -lntp | grep -E ':(443|8080|8082|10086) '
+sudo journalctl -u xray -n 100 --no-pager
+sudo journalctl -u cloudflared -n 100 --no-pager
+~~~
+
+本地 WebSocket 检查必须用 HTTP/1.1：
+
+~~~bash
+path="$(sudo sed -n 's/^VLESS_WS_PATH=//p' /etc/self-vps/vless-ws.env)"
+cdn="$(sudo sed -n 's/^CDN_DOMAIN=//p' /etc/self-vps/vless-ws.env)"
+curl --http1.1 -s -o /dev/null -w 'ws=%{http_code}\n' \
+  -H "Host: $cdn" \
+  -H 'Upgrade: websocket' -H 'Connection: Upgrade' \
+  -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+  -H 'Sec-WebSocket-Version: 13' \
+  "http://127.0.0.1:8082$path"
+~~~
+
+预期 `101`；不带 Upgrade 应为 `404`；根路径伪装页应为 `200`。HTTP/2 手工测试返回 404 是正常的。
+
+Cloudflare Public Hostname 的 Service 必须是 HTTP，不能填 HTTPS；`cdn` 不要加 Access，`ssh` 必须加 Access。
+
+## SSH 加固
+
+~~~bash
+sudo sshd -T | grep -E '^(permitrootlogin|passwordauthentication|pubkeyauthentication|x11forwarding|maxauthtries|logingracetime) '
+sudo ls -l /etc/ssh/sshd_config.d/00-hynous-hardening.conf
+~~~
+
+预期：`passwordauthentication no`、`permitrootlogin without-password` 或 `no`、`x11forwarding no`。回滚：
+
+~~~bash
+sudo rm /etc/ssh/sshd_config.d/00-hynous-hardening.conf
+sudo sshd -t && sudo systemctl reload ssh
+~~~
+
+改 SSH 前保留一个可用的 Cloudflare Tunnel 会话，并确认 OrcaTerm 或 VNC 可用。
+
 ## 状态与日志
 
 ~~~bash
