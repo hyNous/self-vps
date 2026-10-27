@@ -40,16 +40,20 @@ SSH：直连 22 / Cloudflare Tunnel → sshd key-only
 Reality 直接占用 TCP 443。**Nginx 不再在 443 提供普通网站**，因此：
 
 - `www.example.com`、`example.com` 的 HTTPS 不会由 Nginx 直接提供；
-- 如果还要个人主页，建议使用 Cloudflare Tunnel，把 `www`/apex 发布到 `http://127.0.0.1:8080`；
-- 也可以把网站放到单独的 8443 端口，并用 Cloudflare Origin Rule 或直接访问 `:8443`；
-- 不要为了恢复网站把 Reality 从 443 挪走，除非你愿意重新调整所有客户端和防火墙；
-- `sub`/`sync` 这类域名如果只是占位页，不需要给它们单独做 HTTPS。
+- 个人主页使用独立 Cloudflare Tunnel，把 `www`/apex 发布到 `http://127.0.0.1:8080`；
+- QQQ 使用另一个独立 Tunnel，经过本机 HTTP 桥到 8443；
+- 也可以把其他网站放到单独的端口，并用 Cloudflare Origin Rule 或直接访问；
+- 不要为了恢复网站把 Reality 从 443 挪走，除非你愿意重新调整所有客户端和防火墙。
 
-Cloudflare Tunnel 发布主页时：
+当前部署使用：
 
 ~~~text
-www.example.com  -> http://127.0.0.1:8080
-example.com      -> http://127.0.0.1:8080
+hynous-home
+  www.hynous.cc / hynous.cc -> http://127.0.0.1:8080
+
+hynous-qqq
+  qqq.hynous.cc -> http://127.0.0.1:8444
+  8444 -> https://127.0.0.1:8443 -> QQQ Dashboard
 ~~~
 
 不要把主页发布到 `https://127.0.0.1:443`，那里是 Reality，不是 Nginx。

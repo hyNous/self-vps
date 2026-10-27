@@ -76,7 +76,7 @@ cloudflared-qqq.service
 
 QQQ 的 HTTP 桥用于避开 Cloudflare 对 HTTPS origin 证书的 1034 判定；桥只监听 127.0.0.1。
 
-`sub`/`sync` 已从 Nginx 主别名移除，80 端口返回 444；如果 Cloudflare 上仍能看到这两个 DNS A 记录，需要单独删除 DNS。
+`sub`/`sync` 已从 Nginx 别名移除，Cloudflare DNS 记录也已删除；它们不再解析，不再提供页面。
 
 ## Docker 与监控
 

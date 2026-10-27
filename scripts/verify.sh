@@ -177,10 +177,12 @@ if command -v docker >/dev/null 2>&1 &&
   fi
 fi
 
-if [[ -f /etc/systemd/system/cloudflared.service ]] ||
-  systemctl cat cloudflared.service >/dev/null 2>&1; then
-  check_service cloudflared
-fi
+for unit in cloudflared.service cloudflared-home.service cloudflared-qqq.service; do
+  if [[ -f "/etc/systemd/system/$unit" ]] ||
+    systemctl cat "$unit" >/dev/null 2>&1; then
+    check_service "$unit"
+  fi
+done
 if [[ -f /etc/systemd/system/self-vps-docker-watchdog.timer ]]; then
   check_service self-vps-docker-watchdog.timer
 fi

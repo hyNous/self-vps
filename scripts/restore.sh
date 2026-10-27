@@ -55,9 +55,11 @@ if command -v docker >/dev/null 2>&1; then
   done
 fi
 
-if [[ -f /etc/systemd/system/cloudflared.service ]]; then
-  systemctl restart cloudflared
-fi
+for unit in cloudflared.service cloudflared-home.service cloudflared-qqq.service; do
+  if [[ -f "/etc/systemd/system/$unit" ]]; then
+    systemctl enable --now "$unit"
+  fi
+done
 if [[ -f /etc/systemd/system/self-vps-docker-watchdog.timer ]]; then
   systemctl enable --now self-vps-docker-watchdog.timer
 fi
