@@ -22,7 +22,7 @@ archive="$(realpath "$2")"
 }
 (cd "$(dirname "$archive")" && sha256sum -c "$(basename "$archive").sha256")
 
-allowed='^(etc/self-vps(/.*)?|etc/letsencrypt(/.*)?|etc/cloudflared(/.*)?|etc/nginx(/.*)?|etc/systemd/system/(cloudflared[^/]*|qqq[^/]*)\.service|etc/modules-load\.d/bbr\.conf|etc/sysctl\.d/99-bbr\.conf|etc/sysctl\.d/99-tcp-tune\.conf|etc/sysctl\.conf|etc/ssh/sshd_config\.d/00-hynous-hardening\.conf|usr/local/etc/xray/config\.json|usr/local/etc/xray/cert(/.*)?|var/www(/.*)?|opt/(self-vps-monitoring|uptime-kuma|beszel)(/.*)?|opt/(qqq-monitor|race-history|sample-warehouse)(/.*)?)$'
+allowed='^(etc/self-vps(/.*)?|etc/letsencrypt(/.*)?|etc/cloudflared(/.*)?|etc/nginx(/.*)?|etc/systemd/system/(cloudflared[^/]*|qqq[^/]*|self-vps-docker-watchdog[^/]*)\.(service|timer)|etc/modules-load\.d/bbr\.conf|etc/sysctl\.d/99-bbr\.conf|etc/sysctl\.d/99-tcp-tune\.conf|etc/sysctl\.conf|etc/ssh/sshd_config\.d/00-hynous-hardening\.conf|usr/local/etc/xray/config\.json|usr/local/etc/xray/cert(/.*)?|usr/local/sbin/self-vps-docker-watchdog\.sh|var/www(/.*)?|opt/(self-vps-monitoring|uptime-kuma|beszel)(/.*)?|opt/(qqq-monitor|race-history|sample-warehouse)(/.*)?)$'
 while IFS= read -r entry; do
   normalized="${entry%/}"
   [[ "$normalized" =~ $allowed ]] || {
@@ -57,6 +57,9 @@ fi
 
 if [[ -f /etc/systemd/system/cloudflared.service ]]; then
   systemctl restart cloudflared
+fi
+if [[ -f /etc/systemd/system/self-vps-docker-watchdog.timer ]]; then
+  systemctl enable --now self-vps-docker-watchdog.timer
 fi
 
 echo "Restore complete. Run scripts/verify.sh and check monitoring manually."

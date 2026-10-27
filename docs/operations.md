@@ -98,6 +98,13 @@ sudo docker compose -f /opt/uptime-kuma/compose.yml up -d --force-recreate uptim
 sudo docker compose -f /opt/beszel/compose.yml up -d
 ~~~
 
+同时安装了 `self-vps-docker-watchdog.timer`，每 2 分钟检查链、端口和 HTTP 健康接口；链丢失且端口失效时会自动恢复：
+
+~~~bash
+systemctl status self-vps-docker-watchdog.timer --no-pager
+journalctl -u self-vps-docker-watchdog -n 100 --no-pager
+~~~
+
 Docker 重启会短暂影响所有容器；先确认当前没有正在进行的监控数据库写入。
 
 ## 证书续期

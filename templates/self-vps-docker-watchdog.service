@@ -1,0 +1,10 @@
+[Unit]
+Description=self-vps Docker monitoring watchdog
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/self-vps-docker-watchdog.sh
+Nice=10
+TimeoutStartSec=120

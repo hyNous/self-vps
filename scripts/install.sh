@@ -251,6 +251,17 @@ fi
 
 systemctl restart nginx xray
 
+# Optional: install the monitoring watchdog when Docker is already present.
+if command -v docker >/dev/null 2>&1 && systemctl is-active --quiet docker; then
+  install -m 750 "$repo_root/scripts/docker-watchdog.sh" /usr/local/sbin/self-vps-docker-watchdog.sh
+  install -m 644 "$repo_root/templates/self-vps-docker-watchdog.service" \
+    /etc/systemd/system/self-vps-docker-watchdog.service
+  install -m 644 "$repo_root/templates/self-vps-docker-watchdog.timer" \
+    /etc/systemd/system/self-vps-docker-watchdog.timer
+  systemctl daemon-reload
+  systemctl enable --now self-vps-docker-watchdog.timer
+fi
+
 echo "Core Reality node installed."
 echo "Reality values are stored in $reality_env (mode 600)."
 echo "Client public key: $REALITY_PUBLIC_KEY"

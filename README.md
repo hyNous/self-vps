@@ -115,6 +115,8 @@ sudo sed -n 's/^REALITY_UUID=//p' /etc/self-vps/reality.env
 | `/etc/modules-load.d/bbr.conf` | 开机加载 BBR |
 | `/etc/sysctl.d/99-tcp-tune.conf` | BBR、队列和 SYN 参数 |
 | `/etc/ssh/sshd_config.d/00-hynous-hardening.conf` | 可选的 key-only SSH 加固 |
+| `/usr/local/sbin/self-vps-docker-watchdog.sh` | Docker 监控链/端口自动恢复 |
+| `/etc/systemd/system/self-vps-docker-watchdog.{service,timer}` | 每 2 分钟运行 watchdog |
 
 Xray 由 [XTLS 官方安装器](https://github.com/XTLS/Xray-install)安装。仓库固定安装器提交，避免上游脚本在无人知情时变化。
 
@@ -147,13 +149,16 @@ curl.exe -x http://127.0.0.1:7890 https://api.ipify.org
 
 建议把 Uptime Kuma 当成“可用性面板”，把 Beszel 当成“资源面板”：
 
-- Uptime Kuma：Reality 443、CDN 443、主页 HTTPS、QQQ 8443、证书到期；
-- Beszel：CPU、内存、磁盘、网卡流量、容器资源；
-- Reality 的 TCP 443 只能说明端口开放，不能说明协议可用；端到端探测应通过客户端或独立的 Xray/sing-box 探针完成。
+- `status.hynous.cc` 是统一状态页，根路径会跳到 `/status/hynous`；
+- `monitor.hynous.cc` 是 Beszel 资源面板；
+- Reality 的 TCP 443 只能说明端口开放，不能说明协议可用；端到端探测应通过客户端或独立的 Xray/sing-box 探针完成；
+- 仓库的 `scripts/client-probe.ps1` 是 Windows 客户端探针，通过 FlClash 的 7890 端口验证真实出口并上报 Uptime Kuma；
+- 具体颜色含义和红灯处理顺序见[监控与状态页说明](docs/monitoring.md)。
 
 ## 运维与迁移
 
 - [日常运维、升级与回滚](docs/operations.md)
+- [监控与状态页说明](docs/monitoring.md)
 - [VPS 或域名迁移](docs/migration.md)
 - [常见故障排查](docs/troubleshooting.md)
 

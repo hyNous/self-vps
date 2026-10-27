@@ -11,8 +11,14 @@ timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 archive="$destination/self-vps-$timestamp.tar.gz"
 compose_files=()
 monitoring_stopped=0
+watchdog_was_active=0
 
 install -d -m 700 "$destination"
+
+if systemctl is-active --quiet self-vps-docker-watchdog.timer 2>/dev/null; then
+  systemctl stop self-vps-docker-watchdog.timer
+  watchdog_was_active=1
+fi
 
 for compose in \
   /opt/self-vps-monitoring/compose.yaml \
@@ -34,6 +40,9 @@ restart_monitoring() {
       docker compose -f "$compose" start || true
     done
   fi
+  if ((watchdog_was_active)); then
+    systemctl start self-vps-docker-watchdog.timer || true
+  fi
 }
 trap restart_monitoring EXIT
 
@@ -45,6 +54,9 @@ for path in \
   etc/nginx/sites-available \
   etc/nginx/sites-enabled \
   etc/systemd/system/cloudflared.service \
+  etc/systemd/system/self-vps-docker-watchdog.service \
+  etc/systemd/system/self-vps-docker-watchdog.timer \
+  usr/local/sbin/self-vps-docker-watchdog.sh \
   usr/local/etc/xray/config.json \
   var/www \
   etc/modules-load.d/bbr.conf \

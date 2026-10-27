@@ -181,6 +181,9 @@ if [[ -f /etc/systemd/system/cloudflared.service ]] ||
   systemctl cat cloudflared.service >/dev/null 2>&1; then
   check_service cloudflared
 fi
+if [[ -f /etc/systemd/system/self-vps-docker-watchdog.timer ]]; then
+  check_service self-vps-docker-watchdog.timer
+fi
 
 if [[ -f /etc/ssh/sshd_config.d/00-hynous-hardening.conf ]]; then
   sshd_effective="$(sshd -T 2>/dev/null || true)"
