@@ -9,6 +9,7 @@ managed_dir="/etc/self-vps"
 xray_config="/usr/local/etc/xray/config.json"
 nginx_site="/etc/nginx/sites-available/self-vps"
 nginx_vless_site="/etc/nginx/sites-available/vless-cdn"
+reality_env="$managed_dir/reality.env"
 vless_env="$managed_dir/vless-ws.env"
 xray_install_ref="e741a4f56d368afbb9e5be3361b40c4552d3710d"
 
@@ -29,10 +30,23 @@ set +a
 NODE_DOMAIN="${NODE_DOMAIN:-}"
 ACME_EMAIL="${ACME_EMAIL:-}"
 SSH_PORT="${SSH_PORT:-22}"
-TROJAN_PASSWORD="${TROJAN_PASSWORD:-}"
+REALITY_DEST="${REALITY_DEST:-104.16.123.96:443}"
+REALITY_SERVER_NAME="${REALITY_SERVER_NAME:-www.cloudflare.com}"
 CDN_DOMAIN="${CDN_DOMAIN:-}"
 VLESS_UUID="${VLESS_UUID:-}"
 VLESS_WS_PATH="${VLESS_WS_PATH:-}"
+
+# Reuse generated values on a managed reinstall. Empty .env values are
+# intentionally allowed so an existing node can be updated without changing
+# its client credentials.
+if [[ -f "$reality_env" ]]; then
+  # shellcheck disable=SC1090
+  source "$reality_env"
+fi
+if [[ -f "$vless_env" ]]; then
+  # shellcheck disable=SC1090
+  source "$vless_env"
+fi
 
 [[ "$NODE_DOMAIN" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$ ]] ||
   die "NODE_DOMAIN is not a valid hostname"
@@ -42,6 +56,10 @@ VLESS_WS_PATH="${VLESS_WS_PATH:-}"
 if ! [[ "$SSH_PORT" =~ ^[0-9]+$ ]] || ((SSH_PORT < 1 || SSH_PORT > 65535)); then
   die "SSH_PORT must be between 1 and 65535"
 fi
+[[ "$REALITY_DEST" =~ ^[^[:space:]:]+:[0-9]+$ ]] ||
+  die "REALITY_DEST must be host:port, for example 104.16.123.96:443"
+[[ "$REALITY_SERVER_NAME" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$ ]] ||
+  die "REALITY_SERVER_NAME is not a valid hostname"
 
 if [[ -z "$CDN_DOMAIN" ]]; then
   CDN_DOMAIN="cdn.${NODE_DOMAIN#*.}"
@@ -72,59 +90,39 @@ getent ahosts "$NODE_DOMAIN" >/dev/null ||
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y ca-certificates certbot curl nginx openssl ufw
+apt-get install -y ca-certificates certbot curl nginx openssl python3 ufw
 
-if [[ -z "$TROJAN_PASSWORD" && -f "$managed_dir/node.env" ]]; then
-  TROJAN_PASSWORD="$(sed -n 's/^TROJAN_PASSWORD=//p' "$managed_dir/node.env" | head -n 1)"
-fi
-if [[ -z "$TROJAN_PASSWORD" ]]; then
-  TROJAN_PASSWORD="$(openssl rand -hex 24)"
-fi
-[[ "$TROJAN_PASSWORD" =~ ^[A-Za-z0-9._~-]{16,128}$ ]] ||
-  die "TROJAN_PASSWORD must be 16-128 safe ASCII characters"
-
-if [[ -z "$VLESS_UUID" && -f "$vless_env" ]]; then
-  VLESS_UUID="$(sed -n 's/^VLESS_UUID=//p' "$vless_env" | head -n 1)"
-fi
-if [[ -z "$VLESS_WS_PATH" && -f "$vless_env" ]]; then
-  VLESS_WS_PATH="$(sed -n 's/^VLESS_WS_PATH=//p' "$vless_env" | head -n 1)"
-fi
 if [[ -z "$VLESS_UUID" ]]; then
   VLESS_UUID="$(cat /proc/sys/kernel/random/uuid)"
 fi
 if [[ -z "$VLESS_WS_PATH" ]]; then
   VLESS_WS_PATH="/$(openssl rand -hex 16)"
 fi
+if [[ -z "$REALITY_UUID" ]]; then
+  REALITY_UUID="$(cat /proc/sys/kernel/random/uuid)"
+fi
+if [[ -z "$REALITY_SHORT_ID" ]]; then
+  REALITY_SHORT_ID="$(openssl rand -hex 8)"
+fi
+
 [[ "$VLESS_UUID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] ||
   die "VLESS_UUID must be a UUID"
 [[ "$VLESS_WS_PATH" =~ ^/[A-Za-z0-9._~-]{8,128}$ ]] ||
   die "VLESS_WS_PATH must start with / and use 8-128 safe ASCII characters"
+[[ "$REALITY_UUID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] ||
+  die "REALITY_UUID must be a UUID"
+[[ "$REALITY_SHORT_ID" =~ ^[0-9a-fA-F]{1,16}$ ]] ||
+  die "REALITY_SHORT_ID must be 1-16 hexadecimal characters"
 
 backup_dir="/var/backups/self-vps/$(date -u +%Y%m%dT%H%M%SZ)"
 install -d -m 700 "$backup_dir"
-for path in "$xray_config" "$nginx_site" "$nginx_vless_site" "$managed_dir/node.env" "$vless_env" /etc/sysctl.conf; do
+for path in "$xray_config" "$nginx_site" "$nginx_vless_site" "$reality_env" "$vless_env" /etc/sysctl.conf; do
   if [[ -e "$path" ]]; then
     cp -a "$path" "$backup_dir/"
   fi
 done
 
 install -d -m 700 "$managed_dir"
-{
-  printf 'NODE_DOMAIN=%q\n' "$NODE_DOMAIN"
-  printf 'ACME_EMAIL=%q\n' "$ACME_EMAIL"
-  printf 'SSH_PORT=%q\n' "$SSH_PORT"
-  printf 'TROJAN_PASSWORD=%q\n' "$TROJAN_PASSWORD"
-} >"$managed_dir/node.env"
-chmod 600 "$managed_dir/node.env"
-{
-  printf 'CDN_DOMAIN=%q\n' "$CDN_DOMAIN"
-  printf 'VLESS_UUID=%q\n' "$VLESS_UUID"
-  printf 'VLESS_WS_PATH=%q\n' "$VLESS_WS_PATH"
-} >"$vless_env"
-chmod 600 "$vless_env"
-touch "$managed_dir/managed"
-chmod 600 "$managed_dir/managed"
-
 install -d -m 755 /var/www/self-vps/.well-known/acme-challenge
 printf '%s\n' '<!doctype html><title>self-vps</title><h1>self-vps is running</h1>' \
   >/var/www/self-vps/index.html
@@ -151,20 +149,71 @@ curl --fail --location --proto '=https' --tlsv1.2 \
   --output "$xray_installer"
 bash "$xray_installer" install
 
-install -d -o root -g nogroup -m 750 /usr/local/etc/xray/cert
+# Reuse the private key from an existing managed config when possible. This
+# keeps a reinstall from silently rotating all client credentials.
+if [[ -z "${REALITY_PRIVATE_KEY:-}" && -f "$xray_config" ]]; then
+  REALITY_PRIVATE_KEY="$(
+    python3 - "$xray_config" <<'PY' 2>/dev/null || true
+import json
+import sys
+
+try:
+    with open(sys.argv[1]) as fh:
+        data = json.load(fh)
+    for inbound in data.get("inbounds", []):
+        reality = inbound.get("streamSettings", {}).get("realitySettings", {})
+        if reality.get("privateKey"):
+            print(reality["privateKey"])
+            break
+except Exception:
+    pass
+PY
+  )"
+fi
+
+if [[ -z "${REALITY_PRIVATE_KEY:-}" ]]; then
+  key_output="$(/usr/local/bin/xray x25519)"
+  REALITY_PRIVATE_KEY="$(printf '%s\n' "$key_output" | sed -n -e 's/^PrivateKey: //p' -e 's/^Private key: //p' | head -n 1)"
+fi
+if [[ -z "${REALITY_PUBLIC_KEY:-}" ]]; then
+  key_output="$(/usr/local/bin/xray x25519 -i "$REALITY_PRIVATE_KEY")"
+  REALITY_PUBLIC_KEY="$(printf '%s\n' "$key_output" | sed -n -e 's/^Password (PublicKey): //p' -e 's/^PublicKey: //p' -e 's/^Public key: //p' | head -n 1)"
+fi
+[[ -n "$REALITY_PRIVATE_KEY" && -n "$REALITY_PUBLIC_KEY" ]] ||
+  die "could not generate or read Reality keypair"
+
+{
+  printf 'NODE_DOMAIN=%q\n' "$NODE_DOMAIN"
+  printf 'REALITY_UUID=%q\n' "$REALITY_UUID"
+  printf 'REALITY_PUBLIC_KEY=%q\n' "$REALITY_PUBLIC_KEY"
+  printf 'REALITY_PRIVATE_KEY=%q\n' "$REALITY_PRIVATE_KEY"
+  printf 'REALITY_SHORT_ID=%q\n' "$REALITY_SHORT_ID"
+  printf 'REALITY_SERVER_NAME=%q\n' "$REALITY_SERVER_NAME"
+  printf 'REALITY_DEST=%q\n' "$REALITY_DEST"
+} >"$reality_env"
+chmod 600 "$reality_env"
+
+{
+  printf 'CDN_DOMAIN=%q\n' "$CDN_DOMAIN"
+  printf 'VLESS_UUID=%q\n' "$VLESS_UUID"
+  printf 'VLESS_WS_PATH=%q\n' "$VLESS_WS_PATH"
+} >"$vless_env"
+chmod 600 "$vless_env"
+touch "$managed_dir/managed"
+chmod 600 "$managed_dir/managed"
+
+install -d -o root -g nogroup -m 750 /usr/local/etc/xray
 sed \
-  -e "s/__NODE_DOMAIN__/$NODE_DOMAIN/g" \
-  -e "s/__TROJAN_PASSWORD__/$TROJAN_PASSWORD/g" \
+  -e "s#__REALITY_UUID__#$REALITY_UUID#g" \
+  -e "s#__REALITY_DEST__#$REALITY_DEST#g" \
+  -e "s#__REALITY_SERVER_NAME__#$REALITY_SERVER_NAME#g" \
+  -e "s#__REALITY_PRIVATE_KEY__#$REALITY_PRIVATE_KEY#g" \
+  -e "s#__REALITY_SHORT_ID__#$REALITY_SHORT_ID#g" \
   -e "s#__VLESS_UUID__#$VLESS_UUID#g" \
   -e "s#__VLESS_WS_PATH__#$VLESS_WS_PATH#g" \
   "$repo_root/templates/xray-config.json" >"$xray_config"
 chown root:nogroup "$xray_config"
 chmod 640 "$xray_config"
-
-hook="/etc/letsencrypt/renewal-hooks/deploy/xray-cert.sh"
-sed "s/__NODE_DOMAIN__/$NODE_DOMAIN/g" "$repo_root/templates/xray-cert-hook.sh" >"$hook"
-chmod 750 "$hook"
-"$hook"
 
 /usr/local/bin/xray run -test -config "$xray_config"
 systemctl enable --now xray
@@ -202,6 +251,8 @@ fi
 
 systemctl restart nginx xray
 
-echo "Core node installed. Password is stored in $managed_dir/node.env (mode 600)."
+echo "Core Reality node installed."
+echo "Reality values are stored in $reality_env (mode 600)."
+echo "Client public key: $REALITY_PUBLIC_KEY"
 echo "VLESS/CDN values are stored in $vless_env (mode 600)."
 echo "Run: sudo $repo_root/scripts/verify.sh"

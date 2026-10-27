@@ -5,11 +5,11 @@
 ## 同域名迁移到新 VPS
 
 1. 在旧 VPS 创建备份并复制到加密的本地存储。
-2. 为新 VPS 准备一个临时测试域名，使用本仓库完成核心安装。
+2. 为新 VPS 准备一个临时测试域名，使用本仓库完成 Reality 核心安装。
 3. 把备份和校验文件复制到新 VPS，执行恢复。
-4. 确认新 VPS 的 Xray、Nginx、证书、BBR 和监控数据正常。
+4. 确认新 VPS 的 Xray Reality、Nginx、证书、BBR、Cloudflare Tunnel 和监控数据正常。
 5. 更新生产域名 DNS 到新 VPS。
-6. 用客户端连接并确认出口地址。
+6. 用客户端连接并确认出口地址，同时测试 Reality 和 CDN 两条路径。
 7. 执行 Certbot dry-run 并观察稳定性，再下线旧 VPS。
 
 ~~~bash
@@ -17,20 +17,21 @@
 sudo bash scripts/backup.sh
 
 # 新 VPS：先通过临时域名完成基础安装，再恢复
+sudo bash scripts/restore.sh --check /path/to/self-vps-TIMESTAMP.tar.gz
 sudo bash scripts/restore.sh --confirm /path/to/self-vps-TIMESTAMP.tar.gz
 sudo bash scripts/verify.sh
 ~~~
 
-备份含真实密码、证书私钥和监控数据库，只能通过受保护通道传输。不要上传到 GitHub Release、Issue 或公开对象存储。
+备份含 Reality 私钥、证书私钥、Cloudflare Tunnel token 和监控数据库，只能通过受保护通道传输。不要上传到 GitHub Release、Issue 或公开对象存储。
 
 ## 更换域名
 
 1. 新域名 DNS 指向当前或新 VPS。
-2. 修改本地 .env 中的 NODE_DOMAIN 和 ACME_EMAIL。
-3. 保留原 TROJAN_PASSWORD 可减少客户端改动，或显式轮换密码。
+2. 修改本地 `.env` 中的 `NODE_DOMAIN`、`ACME_EMAIL`、`REALITY_SERVER_NAME`；必要时更新 `REALITY_DEST`。
+3. 保留原 `REALITY_UUID`/`REALITY_SHORT_ID` 可减少客户端改动，或显式轮换。
 4. 重新执行安装脚本，签发新证书并渲染 Xray/Nginx 配置。
-5. 更新 FlClash 的 Trojan `server`/`sni`/密码；如果使用 VLESS/WS，同时更新 CDN `server`、`uuid`、`ws-opts.path` 和 `Host`。
-6. 更新 Uptime Kuma 监控项、Cloudflare Tunnel 的 `cdn`/`ssh`/`monitor`/`status` Public Hostname，以及 `ssh` 的 Access 策略。
+5. 更新 FlClash 的 Reality `server`、`servername`、UUID、public-key、short-id；如果使用 VLESS/WS，同时更新 CDN `server`、`uuid`、`ws-opts.path` 和 `Host`。
+6. 更新 Cloudflare Tunnel 的 `cdn`/`edge`/`ssh`/`monitor`/`status` Public Hostname，以及 `ssh` 的 Access 策略。
 7. 验证新域名后再删除旧 DNS 和旧证书。
 
 ~~~bash
@@ -44,15 +45,28 @@ sudo bash scripts/verify.sh
 ~~~bash
 systemctl is-active ssh nginx xray certbot.timer
 sysctl net.ipv4.tcp_congestion_control
-sudo docker compose -f /opt/self-vps-monitoring/compose.yaml ps
+sudo docker compose -f /opt/uptime-kuma/compose.yml ps 2>/dev/null || true
+sudo docker compose -f /opt/beszel/compose.yml ps 2>/dev/null || true
 ~~~
 
-Windows 客户端：
+Windows 客户端（代理模式）：
 
 ~~~powershell
 curl.exe -x http://127.0.0.1:7890 https://api.ipify.org
 ~~~
 
+TUN 模式下不要依赖 7890 端口判断；应在 FlClash 里选择对应节点并检查出口 IP。
+
 当前 Beta 不承诺无停机迁移。需要无停机时，应另行设计 DNS-01 证书签发、双节点并行和客户端切换策略。
 
 Cloudflare Tunnel 为 token 模式时，ingress 在 Cloudflare 云端托管；本地 `cloudflared` 只负责建立出站连接。迁移或更换域名后，记得同步云端 Public Hostname 和 Access 策略。
+
+## 网站 443 迁移
+
+Reality 占用 443 后，不能用普通 Nginx 443 恢复 `www`/apex 网站。迁移网站时优先选择：
+
+- Cloudflare Tunnel → `http://127.0.0.1:8080`；
+- 或独立的 8443 网站入口 + Cloudflare Origin Rule；
+- 不要占用 Reality 的 443。
+
+`sub`/`sync` 如果只是占位页，可以不迁移；如果它们是真实业务，需要单独部署服务并定义入口。

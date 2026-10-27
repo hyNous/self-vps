@@ -2,6 +2,8 @@
 
 该模块部署 Beszel Hub、本机 Beszel Agent 和 Uptime Kuma。它们只绑定 VPS 回环地址，不需要开放 8090、3001 或 Beszel Agent 端口。
 
+> 本文的 `/opt/self-vps-monitoring` 是合并部署示例。若线上拆分部署，数据目录可能是 `/opt/uptime-kuma` 和 `/opt/beszel`；`scripts/backup.sh` 会自动识别这两种布局。
+
 ## 前置条件
 
 按照 [Docker 官方 Ubuntu 指南](https://docs.docker.com/engine/install/ubuntu/)安装 Docker Engine 和 Compose 插件，然后确认：

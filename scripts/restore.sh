@@ -22,7 +22,7 @@ archive="$(realpath "$2")"
 }
 (cd "$(dirname "$archive")" && sha256sum -c "$(basename "$archive").sha256")
 
-allowed='^(etc/self-vps(/.*)?|etc/nginx/sites-available/(self-vps|vless-cdn)|etc/letsencrypt(/.*)?|etc/modules-load\.d/bbr\.conf|etc/sysctl\.d/99-bbr\.conf|etc/sysctl\.d/99-tcp-tune\.conf|etc/sysctl\.conf|etc/ssh/sshd_config\.d/00-hynous-hardening\.conf|usr/local/etc/xray/config\.json|usr/local/etc/xray/cert(/.*)?|opt/self-vps-monitoring(/.*)?)$'
+allowed='^(etc/self-vps(/.*)?|etc/letsencrypt(/.*)?|etc/cloudflared(/.*)?|etc/nginx(/.*)?|etc/systemd/system/(cloudflared[^/]*|qqq[^/]*)\.service|etc/modules-load\.d/bbr\.conf|etc/sysctl\.d/99-bbr\.conf|etc/sysctl\.d/99-tcp-tune\.conf|etc/sysctl\.conf|etc/ssh/sshd_config\.d/00-hynous-hardening\.conf|usr/local/etc/xray/config\.json|usr/local/etc/xray/cert(/.*)?|var/www(/.*)?|opt/(self-vps-monitoring|uptime-kuma|beszel)(/.*)?|opt/(qqq-monitor|race-history|sample-warehouse)(/.*)?)$'
 while IFS= read -r entry; do
   normalized="${entry%/}"
   [[ "$normalized" =~ $allowed ]] || {
@@ -44,8 +44,19 @@ if [[ -f /etc/ssh/sshd_config.d/00-hynous-hardening.conf ]]; then
   sshd -t && systemctl reload ssh
 fi
 
-if [[ -f /opt/self-vps-monitoring/compose.yaml ]]; then
-  docker compose -f /opt/self-vps-monitoring/compose.yaml up -d
+if command -v docker >/dev/null 2>&1; then
+  for compose in \
+    /opt/self-vps-monitoring/compose.yaml \
+    /opt/uptime-kuma/compose.yml \
+    /opt/beszel/compose.yml; do
+    if [[ -f "$compose" ]]; then
+      docker compose -f "$compose" up -d
+    fi
+  done
+fi
+
+if [[ -f /etc/systemd/system/cloudflared.service ]]; then
+  systemctl restart cloudflared
 fi
 
 echo "Restore complete. Run scripts/verify.sh and check monitoring manually."

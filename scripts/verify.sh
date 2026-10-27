@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-managed_env="/etc/self-vps/node.env"
+managed_env="/etc/self-vps/reality.env"
 vless_env="/etc/self-vps/vless-ws.env"
 failures=0
 
@@ -28,11 +28,13 @@ check_service() {
 }
 
 NODE_DOMAIN=""
+REALITY_DEST=""
+REALITY_SERVER_NAME=""
 if [[ -f "$managed_env" ]]; then
   # shellcheck disable=SC1090
   source "$managed_env"
 else
-  echo "WARN  $managed_env is missing; skipping domain-specific HTTP/TLS checks" >&2
+  echo "WARN  $managed_env is missing; skipping domain-specific checks" >&2
 fi
 if [[ -f "$vless_env" ]]; then
   # shellcheck disable=SC1090
@@ -52,6 +54,26 @@ if /usr/local/bin/xray run -test -config /usr/local/etc/xray/config.json >/dev/n
   pass "xray configuration"
 else
   fail "xray configuration"
+fi
+
+if python3 - <<'PY'
+import json
+
+with open('/usr/local/etc/xray/config.json') as fh:
+    data = json.load(fh)
+
+for inbound in data.get('inbounds', []):
+    if inbound.get('port') != 443:
+        continue
+    stream = inbound.get('streamSettings', {})
+    if inbound.get('protocol') == 'vless' and stream.get('security') == 'reality':
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+then
+  pass "Reality inbound on 443"
+else
+  fail "Reality inbound on 443 is missing"
 fi
 
 ports=(80 443 8080)
@@ -82,10 +104,10 @@ if [[ -n "$NODE_DOMAIN" ]]; then
   fi
 
   if curl --fail --silent --show-error --max-time 15 \
-    --resolve "$NODE_DOMAIN:443:127.0.0.1" "https://$NODE_DOMAIN/" >/dev/null; then
-    pass "Xray TLS fallback"
+    -H "Host: $NODE_DOMAIN" "http://127.0.0.1:8080/" >/dev/null; then
+    pass "Nginx fallback site"
   else
-    fail "Xray TLS fallback"
+    fail "Nginx fallback site"
   fi
 fi
 
@@ -125,6 +147,39 @@ if [[ -n "${CDN_DOMAIN:-}" && -n "${VLESS_WS_PATH:-}" ]]; then
   fi
 fi
 
+# Optional monitoring checks. They also catch the Docker DOCKER-chain failure
+# that leaves healthy-looking containers without published ports.
+if command -v docker >/dev/null 2>&1 &&
+  docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'uptime-kuma'; then
+  if curl --fail --silent --show-error --max-time 10 \
+    http://127.0.0.1:3001/ >/dev/null; then
+    pass "Uptime Kuma is reachable"
+  else
+    fail "Uptime Kuma is not reachable"
+  fi
+
+  if iptables -S DOCKER >/dev/null 2>&1; then
+    pass "Docker DOCKER iptables chain exists"
+  else
+    fail "Docker DOCKER iptables chain is missing"
+  fi
+fi
+
+if command -v docker >/dev/null 2>&1 &&
+  docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'beszel'; then
+  if curl --fail --silent --show-error --max-time 10 \
+    http://127.0.0.1:8090/api/health >/dev/null; then
+    pass "Beszel API is reachable"
+  else
+    fail "Beszel API is not reachable"
+  fi
+fi
+
+if [[ -f /etc/systemd/system/cloudflared.service ]] ||
+  systemctl cat cloudflared.service >/dev/null 2>&1; then
+  check_service cloudflared
+fi
+
 if [[ -f /etc/ssh/sshd_config.d/00-hynous-hardening.conf ]]; then
   sshd_effective="$(sshd -T 2>/dev/null || true)"
   if grep -qx 'passwordauthentication no' <<<"$sshd_effective" &&
@@ -141,3 +196,4 @@ if ((failures > 0)); then
 fi
 
 echo "All core checks passed."
+echo "TUN is a client-side setting and is not tested from the VPS."

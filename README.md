@@ -1,93 +1,58 @@
 # self-vps
 
-在 Ubuntu 24.04 上快速部署 Xray Trojan + TLS 自建代理节点，默认由 VPS freedom 直接出站；Nginx、Let's Encrypt、UFW 和 BBR 随核心节点配置。可选 VLESS+WS over Cloudflare Tunnel 作为直连被阻断时的备用入口；Beszel、Uptime Kuma 与 Cloudflare Tunnel 为监控模块。SSH 支持 key-only 加固。
+在 Ubuntu 24.04 上部署 Xray **VLESS + TCP + Reality + XTLS Vision** 直连节点，并可选配置 VLESS/WS over Cloudflare Tunnel 作为 CDN 备用入口。Nginx 只负责 80 端口、ACME 和本机 8080/8082 回环服务；UFW、BBR 和可选的 key-only SSH 加固随核心节点配置。Beszel 与 Uptime Kuma 是独立监控模块。
 
-> **Beta**：模板和脚本经过静态检查，但尚未在一台全新 VPS 上完成端到端安装验证。请先使用测试服务器，并保留云厂商快照和 SSH 控制台。
+> **Beta**：仓库脚本经过静态检查，但新的 Reality 安装流程仍应先在测试 VPS 上完整跑一遍，并保留云厂商快照和 SSH 控制台。
 
 ## 架构
 
 ~~~text
-FlClash / Mihomo
+FlClash / Mihomo（建议开启 TUN）
       │
-      ├─ Trojan + TLS 443（直连，可能被路径阻断）
+      ├─ VLESS + Reality 443（直连，xtls-rprx-vision）
       │     ▼
       │   Xray ──────────────→ freedom / VPS 直接出站
-      │     │ fallback
-      │     ▼
-      │   Nginx 127.0.0.1:8080
       │
-      └─ VLESS + WS 443（Cloudflare 边缘）
+      └─ VLESS + WS 443（Cloudflare 边缘，备用）
             ▼
         Cloudflare Tunnel → Nginx 127.0.0.1:8082 → Xray 127.0.0.1:10086
 
-SSH：cloudflared access ssh → ssh.example.com → sshd key-only
+SSH：直连 22 / Cloudflare Tunnel → sshd key-only
 监控：Beszel + Uptime Kuma ← Cloudflare Tunnel
 ~~~
 
-核心部署与当前项目保持一致：
+核心部署：
 
 - Ubuntu 24.04 amd64
-- Xray Trojan + TLS，监听 TCP 443
-- Nginx 监听 TCP 80，并在 127.0.0.1:8080 提供 Xray fallback
-- Certbot webroot 续期，部署钩子复制证书并重启 Xray
-- UFW 仅放行 SSH、80、443
+- Xray VLESS + Reality，监听 TCP 443
+- Reality `dest` 默认 `104.16.123.96:443`，`serverNames` 默认 `www.cloudflare.com`
+- Nginx 监听 TCP 80，并在 `127.0.0.1:8080` 提供本机回环页面
+- Certbot webroot 续期：证书不再被 Reality 使用，但保留给可选的 8443 网站入口
+- UFW 仅放行 SSH、80、443；8443 等额外端口需单独放行
 - BBR + 系统现有队列规则
-- 默认 freedom 直出，不包含住宅代理或机场前置
-- 可选 VLESS + WS：Xray 仅监听 127.0.0.1:10086，Nginx 127.0.0.1:8082 做 WebSocket 反代和伪装页
+- 默认 freedom 直出，`domainStrategy` 为 `UseIPv4`
+- 可选 VLESS/WS：Xray 仅监听 `127.0.0.1:10086`，Nginx `127.0.0.1:8082` 做 WebSocket 反代和伪装页
 - 可选 SSH 加固：只允许公钥，关闭密码和 root SSH
-- 可选 Cloudflare Tunnel：暴露 CDN 入口和 SSH，监控面板仍只绑定回环
+- 可选 Cloudflare Tunnel：CDN 入口、SSH、监控面板
 
-## 可选：Cloudflare Tunnel + VLESS/WS
+## 重要边界：443 属于 Reality
 
-当中国大陆到 VPS 公网 IP 的直连 TCP 回程被丢弃时，Trojan 443 和 SSH 22 都可能超时。此时可以让 VPS 主动向 Cloudflare 建立 Tunnel，客户端只连 Cloudflare 边缘：
+Reality 直接占用 TCP 443。**Nginx 不再在 443 提供普通网站**，因此：
 
-- `cdn.example.com` → `http://localhost:8082` → Nginx → `127.0.0.1:10086` Xray VLESS/WS
-- `ssh.example.com` → `tcp://localhost:22`，必须加 Cloudflare Access
-- 监控继续使用 `monitor.example.com` / `status.example.com`
+- `www.example.com`、`example.com` 的 HTTPS 不会由 Nginx 直接提供；
+- 如果还要个人主页，建议使用 Cloudflare Tunnel，把 `www`/apex 发布到 `http://127.0.0.1:8080`；
+- 也可以把网站放到单独的 8443 端口，并用 Cloudflare Origin Rule 或直接访问 `:8443`；
+- 不要为了恢复网站把 Reality 从 443 挪走，除非你愿意重新调整所有客户端和防火墙；
+- `sub`/`sync` 这类域名如果只是占位页，不需要给它们单独做 HTTPS。
 
-Cloudflare 侧注意：
+Cloudflare Tunnel 发布主页时：
 
-- `cdn` 的 Service 必须是 `HTTP`，不能填 `https`；8082 是纯 HTTP。
-- 不要给 `cdn` 加 Cloudflare Access，否则 VLESS 会被登录页挡住。
-- `ssh` 必须加 Access；未加 Access 的公开 TCP SSH 入口风险很高。
-- Trojan 443 不要挂到 HTTP 型 Public Hostname；Cloudflare 终止 TLS 后 Xray 会认为不是 Trojan。
-- WebSocket 手工测试必须用 HTTP/1.1；HTTP/2 没有 Upgrade 语义，会返回 404。
-- Cloudflare 免费线路的速度和 ToS 都有上限，适合作为备用/过渡入口。
-
-## SSH 登录
-
-服务端默认支持 key-only 登录。Cloudflare Tunnel 可用时，本机 `~/.ssh/config`：
-
-~~~sshconfig
-Host hynous
-    HostName ssh.example.com
-    User ubuntu
-    IdentityFile ~/.ssh/id_ed25519
-    IdentitiesOnly yes
-    StrictHostKeyChecking accept-new
-    ProxyCommand "C:/Program Files (x86)/cloudflared/cloudflared.exe" access ssh --hostname %h
-    ServerAliveInterval 30
-    ServerAliveCountMax 3
+~~~text
+www.example.com  -> http://127.0.0.1:8080
+example.com      -> http://127.0.0.1:8080
 ~~~
 
-然后直接：
-
-~~~bash
-ssh hynous
-sudo -i   # 需要 root 操作时
-~~~
-
-密码登录和 root SSH 默认关闭；`ubuntu` 通过 NOPASSWD sudo 提权。OrcaTerm / 腾讯云 VNC 作为 break-glass。若给 `ssh.example.com` 加了 Cloudflare Access，`cloudflared access ssh` 会要求 OTP 或 Service Token。
-
-## 准备条件
-
-- 一台全新的 Ubuntu 24.04 amd64 VPS，建议至少 1 vCPU / 1 GiB 内存
-- 一个已经解析到该 VPS 的域名
-- 云防火墙允许 SSH、TCP 80 和 TCP 443
-- 可用的 sudo/root 权限
-- 安装期间 TCP 80 和 443 没有被其他服务占用
-
-脚本不会配置云厂商防火墙，也不会自动修改 DNS。若发现现有 Xray 或本项目 Nginx 配置不属于本仓库管理，安装会停止，避免覆盖生产配置。
+不要把主页发布到 `https://127.0.0.1:443`，那里是 Reality，不是 Nginx。
 
 ## 快速开始
 
@@ -100,55 +65,56 @@ sudo bash scripts/install.sh
 sudo bash scripts/verify.sh
 ~~~
 
-.env 最少需要填写：
+`.env` 最少需要填写：
 
 ~~~dotenv
 NODE_DOMAIN=node.example.com
 ACME_EMAIL=admin@example.com
 SSH_PORT=22
-TROJAN_PASSWORD=
+REALITY_DEST=104.16.123.96:443
+REALITY_SERVER_NAME=www.cloudflare.com
+~~~
+
+可选值：
+
+~~~dotenv
+REALITY_UUID=
+REALITY_SHORT_ID=
 CDN_DOMAIN=
 VLESS_UUID=
 VLESS_WS_PATH=
 ENABLE_SSH_HARDENING=0
 ~~~
 
-`CDN_DOMAIN`、`VLESS_UUID`、`VLESS_WS_PATH` 只在需要 VLESS+WS 备用入口时填写；留空会自动生成，并保存到 VPS 的 `/etc/self-vps/vless-ws.env`。`ENABLE_SSH_HARDENING=1` 会关闭密码和 root SSH，必须在确认公钥登录可用后再启用。
+- `REALITY_UUID`、`REALITY_SHORT_ID` 留空会自动生成并保存到 `/etc/self-vps/reality.env`；
+- `CDN_DOMAIN` 留空时从 `NODE_DOMAIN` 推导 `cdn.<zone>`；
+- `VLESS_UUID`、`VLESS_WS_PATH` 留空会自动生成，并保存到 `/etc/self-vps/vless-ws.env`；
+- `ENABLE_SSH_HARDENING=1` 会关闭密码和 root SSH，必须在确认公钥登录可用后再启用；
+- `REALITY_DEST` 必须是 `host:port`，`REALITY_SERVER_NAME` 必须是目标站点证书覆盖的域名。
 
-密码留空时，安装脚本会生成随机密码并保存在 VPS 的 /etc/self-vps/node.env，文件权限为 600。仓库不会打印或提交该密码。管理员可在自己的终端读取它并填写客户端配置：
-
-~~~bash
-sudo awk -F= '$1 == "TROJAN_PASSWORD" {print $2}' /etc/self-vps/node.env
-~~~
-
-将 [FlClash 模板](templates/flclash.yaml) 中的占位符替换为自己的域名和密码，再从 FlClash 的“配置”页面导入。
-
-## 首次使用与密码轮换
-
-首次成功动作是在 FlClash 导入配置、选择 `Seoul-CDN`（VLESS/WS）或 `Seoul-Trojan`，并通过代理请求出口地址。若需要轮换 Trojan 密码，在本地 .env 设置新的 TROJAN_PASSWORD，重新运行安装和验证，再更新所有客户端：
+管理员读取 Reality 客户端参数（不要打印私钥）：
 
 ~~~bash
-sudo bash scripts/backup.sh
-sudo bash scripts/install.sh
-sudo bash scripts/verify.sh
+sudo sed -n 's/^REALITY_PUBLIC_KEY=//p' /etc/self-vps/reality.env
+sudo sed -n 's/^REALITY_SHORT_ID=//p' /etc/self-vps/reality.env
+sudo sed -n 's/^REALITY_UUID=//p' /etc/self-vps/reality.env
 ~~~
 
-旧密码会立即失效。不要在聊天、Issue、日志或截图中粘贴新密码。可选监控的首次账号创建和凭据轮换见[监控模块说明](optional/monitoring/README.md)。
+将 [FlClash 模板](templates/flclash.yaml) 中的占位符替换为自己的域名、UUID、shortId 和公钥，再从 FlClash 的“配置”页面导入。TUN 在 FlClash 的应用设置里开启，不属于这个 YAML 文件。
 
 ## 安装内容
 
 | 路径 | 用途 |
 |---|---|
-| /usr/local/etc/xray/config.json | Xray Trojan + TLS + 可选 VLESS/WS 配置 |
-| /usr/local/etc/xray/cert/ | Xray 可读取的证书副本 |
-| /etc/nginx/sites-available/self-vps | ACME、测试页和 fallback |
-| /etc/nginx/sites-available/vless-cdn | VLESS/WS 反代和 CDN 伪装页 |
-| /etc/letsencrypt/renewal-hooks/deploy/xray-cert.sh | 续期部署钩子 |
-| /etc/modules-load.d/bbr.conf | 开机加载 BBR |
-| /etc/sysctl.d/99-tcp-tune.conf | BBR、队列和 SYN 参数 |
-| /etc/ssh/sshd_config.d/00-hynous-hardening.conf | 可选的 key-only SSH 加固 |
-| /etc/self-vps/node.env | root-only 本机参数和 Trojan 密码 |
-| /etc/self-vps/vless-ws.env | root-only VLESS UUID、WS path 和 CDN 域名 |
+| `/usr/local/etc/xray/config.json` | Xray Reality + 可选 VLESS/WS 配置 |
+| `/etc/self-vps/reality.env` | Reality UUID、公钥、私钥、shortId、目标，root-only |
+| `/etc/self-vps/vless-ws.env` | VLESS UUID、WS path、CDN 域名，root-only |
+| `/etc/nginx/sites-available/self-vps` | ACME、HTTP 页面和 8080 回环页面 |
+| `/etc/nginx/sites-available/vless-cdn` | VLESS/WS 反代和 CDN 伪装页 |
+| `/etc/letsencrypt/renewal-hooks/` | 可选的证书续期钩子 |
+| `/etc/modules-load.d/bbr.conf` | 开机加载 BBR |
+| `/etc/sysctl.d/99-tcp-tune.conf` | BBR、队列和 SYN 参数 |
+| `/etc/ssh/sshd_config.d/00-hynous-hardening.conf` | 可选的 key-only SSH 加固 |
 
 Xray 由 [XTLS 官方安装器](https://github.com/XTLS/Xray-install)安装。仓库固定安装器提交，避免上游脚本在无人知情时变化。
 
@@ -158,7 +124,9 @@ Xray 由 [XTLS 官方安装器](https://github.com/XTLS/Xray-install)安装。�
 sudo bash scripts/verify.sh
 ~~~
 
-验证脚本检查 SSH、Nginx、Xray、Certbot timer、80/443/8080 监听、配置语法、BBR、HTTP 页面和 TLS fallback；如果存在 vless-ws.env，还会检查 10086/8082 监听、WebSocket 101、无 Upgrade 的 404 和 CDN 伪装页。它不会测试用户本地到 VPS 的跨境线路质量。
+验证脚本检查 SSH、Nginx、Xray、Certbot timer、80/443/8080 监听、Reality inbound、BBR、HTTP 页面；如果存在 `vless-ws.env`，还会检查 10086/8082 监听、WebSocket 101、无 Upgrade 的 404 和 CDN 伪装页。存在 Uptime Kuma/Beszel 容器时，会额外检查 3001/8090 和 Docker `DOCKER` 链。
+
+它不会从服务端证明“客户端到 VPS”的 Reality 端到端可用，也不会测试 TUN；这两项需要客户端或外部探针验证。
 
 客户端导入后可检查出口：
 
@@ -172,10 +140,16 @@ curl.exe -x http://127.0.0.1:7890 https://api.ipify.org
 
 - Beszel Hub + 本机 Agent
 - Uptime Kuma
-- 仅绑定 127.0.0.1:8090 和 127.0.0.1:3001
+- 仅绑定 `127.0.0.1:8090` 和 `127.0.0.1:3001`
 - 可选 Cloudflare Tunnel 访问
 
-监控不是核心代理的依赖。Beszel 能记录 VPS 网卡和容器流量，但不能单独定位“客户端到 VPS”的低速链路，也不提供 Xray 按用户流量审计。
+当前实际部署可能分别使用 `/opt/uptime-kuma` 和 `/opt/beszel`；`backup.sh` 会自动识别这两个目录，也兼容旧的 `/opt/self-vps-monitoring`。
+
+建议把 Uptime Kuma 当成“可用性面板”，把 Beszel 当成“资源面板”：
+
+- Uptime Kuma：Reality 443、CDN 443、主页 HTTPS、QQQ 8443、证书到期；
+- Beszel：CPU、内存、磁盘、网卡流量、容器资源；
+- Reality 的 TCP 443 只能说明端口开放，不能说明协议可用；端到端探测应通过客户端或独立的 Xray/sing-box 探针完成。
 
 ## 运维与迁移
 
@@ -183,7 +157,7 @@ curl.exe -x http://127.0.0.1:7890 https://api.ipify.org
 - [VPS 或域名迁移](docs/migration.md)
 - [常见故障排查](docs/troubleshooting.md)
 
-核心服务的常用操作：
+常用操作：
 
 ~~~bash
 sudo systemctl start xray nginx
@@ -202,32 +176,33 @@ sudo bash scripts/backup.sh
 恢复属于覆盖性操作，必须显式确认：
 
 ~~~bash
+sudo bash scripts/restore.sh --check /path/to/self-vps-TIMESTAMP.tar.gz
 sudo bash scripts/restore.sh --confirm /path/to/self-vps-TIMESTAMP.tar.gz
 sudo bash scripts/verify.sh
 ~~~
 
-备份包含证书、密码和可能的监控数据库，权限设为 600，仍应存放到加密介质，绝不能提交 Git。
+备份包含 Reality 私钥、证书私钥、Cloudflare Tunnel token、Nginx 配置、`/var/www` 和监控数据库，权限设为 600，仍应存放到加密介质，绝不能提交 Git。额外的非仓库服务可以通过 `/etc/self-vps/backup-extra-paths` 添加，每行一个绝对路径。
 
 ## 安全边界
 
 - 不提交真实域名、服务器地址、密码、Token、私钥、订阅地址或监控数据库。
-- 不通过 Cloudflare 代理 Xray 的 Trojan TCP 入口；代理域名应使用符合协议要求的 DNS 设置。
-- Cloudflare Tunnel 只用于可选的 HTTP 监控界面、VLESS/WS CDN 入口和 SSH；不要把 Trojan 443 挂到 HTTP 型 Public Hostname。
-- `ssh.example.com` 必须加 Cloudflare Access（Service Token 或邮箱 OTP）；`cdn.example.com` 不要加 Access，否则 VLESS 会被登录页挡住。
-- 安装脚本会启用 UFW；它会保留配置的 SSH 端口以及 sshd 检测到的端口。
-- 默认 SSH 加固后只允许公钥，密码和 root SSH 关闭；启用前先确认公钥登录可用。
-- 首次进入 Beszel 和 Uptime Kuma 后应立即创建强密码，并按需启用应用自身的 2FA 或 Cloudflare Access。
+- `ssh.example.com` 如果使用 Cloudflare Tunnel，建议加 Cloudflare Access；当前直连 22 的暴露程度由云安全组和 UFW 决定。
+- `ubuntu` 的 NOPASSWD sudo 会让任何被授权的 key 等价于 root；给 agent 使用独立用户和独立 key。
+- `cdn.example.com` 不要加 Cloudflare Access，否则 VLESS 会被登录页挡住。
+- 不要把 Reality 443 挂到 HTTP 型 Cloudflare Public Hostname。
+- 不要把 Reality 私钥、`reality.env`、`vless-ws.env` 或 Cloudflare token 粘贴到聊天/Issue/日志。
 - 公开仓库中的域名、IP、密码和 Token 全部是示例或占位符。
-- Cloudflare 的 ToS/AUP 对把 CDN/Tunnel 当公共代理出口有保留，存在限速、质询或封号风险；不要把它作为唯一长期入口。
 
 ## 已知限制
 
 - 仅支持 Ubuntu 24.04 amd64。
-- 尚未在全新 VPS 上完成端到端 Beta 验证。
-- 核心默认 Trojan；VLESS+WS 是可选的 CDN 入口，不替代 Trojan；不包含 Reality/XTLS Vision。
+- 尚未在一台全新 VPS 上完成端到端 Beta 验证。
+- 443 归 Reality，普通网站 HTTPS 需要额外设计。
+- Reality `dest` 是固定目标；目标 IP、SNI 或证书不匹配时会出现握手 EOF，需要调整 `REALITY_DEST`/`REALITY_SERVER_NAME`。
 - Cloudflare 免费线路在中国大陆的带宽和稳定性有限，不能保证跑满 VPS 套餐带宽。
 - Uptime Kuma 监控项和 Beszel 首次配对仍需通过 Web UI 完成。
-- 自动恢复仅覆盖本仓库生成的备份，不是整机灾难恢复。
+- 自动恢复仅覆盖备份脚本收录的路径，不是整机灾难恢复。
+- TUN、规则分流和 FlClash 的本地设置不在服务端脚本内。
 
 ## 上游项目
 

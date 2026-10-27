@@ -2,7 +2,7 @@
 
 ## 安装脚本拒绝覆盖配置
 
-如果 /usr/local/etc/xray/config.json 或 /etc/nginx/sites-available/self-vps 已存在，但没有 /etc/self-vps/managed 标记，脚本会停止。这是防止覆盖现有生产配置的安全边界。
+如果 `/usr/local/etc/xray/config.json` 或 `/etc/nginx/sites-available/self-vps` 已存在，但没有 `/etc/self-vps/managed` 标记，脚本会停止。这是防止覆盖现有生产配置的安全边界。
 
 先手动备份并审查差异。不要为了绕过检查而直接创建 managed 标记。
 
@@ -22,30 +22,87 @@ sudo journalctl -u nginx -n 100 --no-pager
 
 ~~~bash
 sudo /usr/local/bin/xray run -test -config /usr/local/etc/xray/config.json
-sudo ls -l /usr/local/etc/xray/cert
 sudo journalctl -u xray -n 100 --no-pager
 ~~~
 
-常见原因是证书文件不存在、私钥权限不允许 Xray 服务用户读取，或 JSON 配置错误。
+常见原因是 JSON 配置错误、Reality 私钥格式错误，或 `reality.env` 被意外改坏。
 
-## 443 正常但客户端无法连接
+## Reality 握手 EOF / 客户端连不上
 
-核对客户端的域名、端口、Trojan 密码和 SNI。skip-cert-verify 应保持 false。然后分别检查：
+Reality 的 `dest` 和 `serverNames` 必须匹配，否则客户端可能表现为握手 EOF、TLS 失败或完全没有请求。
+
+先看服务端：
 
 ~~~bash
-openssl s_client -connect node.example.com:443 -servername node.example.com
+sudo python3 - <<'PY'
+import json
+with open('/usr/local/etc/xray/config.json') as f:
+    d = json.load(f)
+for i in d.get('inbounds', []):
+    s = i.get('streamSettings', {})
+    if s.get('security') == 'reality':
+        r = s.get('realitySettings', {})
+        print(i.get('port'), r.get('dest'), r.get('serverNames'))
+PY
 sudo ss -tin '( sport = :443 )'
 sudo journalctl -u xray -n 100 --no-pager
 ~~~
 
+如果 `www.microsoft.com` 之类的目标出现 EOF，改用实际可用的目标，例如：
+
+~~~text
+REALITY_DEST=104.16.123.96:443
+REALITY_SERVER_NAME=www.cloudflare.com
+~~~
+
+修改后重启 Xray，并使用客户端做真实握手测试；只用 `ss` 看到 443 监听不代表 Reality 正常。
+
+## 443 端口正常，但普通 HTTPS 网站打不开
+
+这是 Reality 占用 443 的预期结果，不是 Nginx 故障。Nginx 没有 443 server，普通 `https://www.example.com/` 会被 Reality 或 Cloudflare 拒绝。
+
+如果还需要个人主页：
+
+- 用 Cloudflare Tunnel 把 `www`/apex 发布到 `http://127.0.0.1:8080`；
+- 或使用独立的 8443 网站入口；
+- 不要把网站发布到 `https://127.0.0.1:443`。
+
+检查 Nginx：
+
+~~~bash
+sudo nginx -T | grep -n 'listen'
+sudo nginx -T | grep -n 'server_name'
+curl -H 'Host: www.example.com' http://127.0.0.1:8080/
+~~~
+
+## 监控页面 502 / 容器 healthy 但端口没监听
+
+这是 Docker `DOCKER` iptables 链丢失的典型表现。容器看起来 healthy，但 3001/8090 没有 `docker-proxy` 监听。
+
+~~~bash
+sudo docker ps
+sudo iptables -S DOCKER
+sudo ss -lntp | grep -E ':(3001|8090) '
+~~~
+
+恢复：
+
+~~~bash
+sudo systemctl restart docker
+sudo docker compose -f /opt/uptime-kuma/compose.yml up -d --force-recreate uptime-kuma
+sudo docker compose -f /opt/beszel/compose.yml up -d
+~~~
+
+重启 Docker 会让所有容器短暂重启；确认没有正在写入的监控数据。
+
 ## 国内直连 22/443 超时，但境外可连、Cloudflare Tunnel 正常
 
-如果服务器上 Xray/Nginx 都在运行，境外节点能连 443，而中国大陆直连 22/443/8443 都是 SYN 到达、SYN-ACK 回不来，优先判断为 IP/路径级回程丢包，不是 Trojan 密码或端口问题。不要继续换端口或反复改密码。
+如果服务器上 Xray/Nginx 都在运行，境外节点能连 443，而中国大陆直连 22/443/8443 都是 SYN 到达、SYN-ACK 回不来，优先判断为 IP/路径级回程丢包，不是 Reality key 或端口问题。不要继续换端口或反复改密码。
 
 使用 Cloudflare Tunnel 绕开直连入站：
 
-- `cdn.example.com` → `http://localhost:8082` 承载 VLESS/WS
-- `ssh.example.com` → `tcp://localhost:22` 承载 SSH，并加 Cloudflare Access
+- `cdn`/`edge` → `http://localhost:8082` 承载 VLESS/WS
+- `ssh` → `tcp://localhost:22` 承载 SSH，并建议加 Cloudflare Access
 
 WebSocket 手工测试必须用 HTTP/1.1；HTTP/2 没有 Upgrade 语义，返回 404 属于正常。
 
@@ -54,7 +111,8 @@ WebSocket 手工测试必须用 HTTP/1.1；HTTP/2 没有 Upgrade 语义，返回
 先确认 FlClash 真正加载的是哪份 profile，而不是只看“导入成功”。检查：
 
 - 当前 profile 是否是自建节点，而不是旧机场订阅；
-- `autoRun` 是否开启；
+- Reality 的 `servername` 是否与服务端 `serverNames` 一致；
+- `reality-opts.public-key`、`short-id` 是否来自当前 `reality.env`；
 - TUN 是否造成回环，可先关闭 TUN 用 7890 测试；
 - DNS fallback 是否指向 `1.1.1.1` / `dns.google`，国内可能超时；
 - 是否有 `DOMAIN-SUFFIX,example.com,DIRECT` 之类的规则。
@@ -79,13 +137,14 @@ curl.exe -x http://127.0.0.1:7890 https://api.ipify.org
 这是预期的 key-only 行为：
 
 - 密码登录已关闭；
-- root SSH 已关闭；
+- root SSH 关闭或仅允许 key；
 - 只允许 `ubuntu` 公钥登录，然后 `sudo -i`。
 
-确认使用 Cloudflare Tunnel 和正确的私钥：
+确认使用正确的私钥：
 
 ~~~powershell
 ssh hynous
+ssh hynous-cf
 ~~~
 
 如果失败，用 OrcaTerm 或腾讯云 VNC 进入，检查：
@@ -98,9 +157,9 @@ sudo journalctl -u ssh -n 100 --no-pager
 
 ## Cloudflare 访问返回登录页或 403
 
-- `ssh.example.com` 应该被 Cloudflare Access 保护；
-- `cdn.example.com` 不应被 Access 保护，否则 VLESS 会被登录页挡住；
-- 检查是否有 `*.example.com` 的通配 Access 应用覆盖到 cdn；
+- `ssh.example.com` 如果加了 Cloudflare Access，需要 OTP 或 Service Token；
+- `cdn`/`edge` 不应被 Access 保护，否则 VLESS 会被登录页挡住；
+- 检查是否有 `*.example.com` 的通配 Access 应用覆盖到 CDN；
 - 检查 WAF / Bot Fight Mode / Under Attack 是否对 WebSocket upgrade 发 challenge。
 
 ## 节点速度慢
@@ -118,9 +177,9 @@ sysctl net.ipv4.tcp_congestion_control net.core.default_qdisc
 ## 监控界面无法访问
 
 ~~~bash
-curl --fail http://127.0.0.1:8090/
-curl --fail http://127.0.0.1:3001/
-sudo docker compose -f /opt/self-vps-monitoring/compose.yaml ps
+curl -fsS http://127.0.0.1:8090/api/health
+curl -fsS http://127.0.0.1:3001/
+sudo docker ps
 sudo journalctl -u cloudflared -n 100 --no-pager
 ~~~
 

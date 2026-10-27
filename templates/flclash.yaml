@@ -12,8 +12,8 @@ dns:
   fake-ip-filter:
     - '*.lan'
     - '*.local'
-    - '__NODE_DOMAIN__'
-    - '__CDN_DOMAIN__'
+    - '+.__NODE_DOMAIN__'
+    - '+.__CDN_DOMAIN__'
     - '+.msftconnecttest.com'
     - '+.msftncsi.com'
   default-nameserver:
@@ -27,6 +27,22 @@ dns:
     - 119.29.29.29
 
 proxies:
+  - name: Seoul-Reality
+    type: vless
+    server: __NODE_DOMAIN__
+    port: 443
+    uuid: __REALITY_UUID__
+    network: tcp
+    tls: true
+    udp: true
+    flow: xtls-rprx-vision
+    servername: __REALITY_SERVER_NAME__
+    client-fingerprint: chrome
+    reality-opts:
+      public-key: __REALITY_PUBLIC_KEY__
+      short-id: __REALITY_SHORT_ID__
+    skip-cert-verify: false
+
   - name: Seoul-CDN
     type: vless
     server: __CDN_DOMAIN__
@@ -43,23 +59,12 @@ proxies:
       headers:
         Host: __CDN_DOMAIN__
 
-  - name: Seoul-Trojan
-    type: trojan
-    server: __NODE_DOMAIN__
-    port: 443
-    password: "__TROJAN_PASSWORD__"
-    sni: __NODE_DOMAIN__
-    alpn:
-      - http/1.1
-    udp: true
-    skip-cert-verify: false
-
 proxy-groups:
   - name: PROXY
     type: select
     proxies:
+      - Seoul-Reality
       - Seoul-CDN
-      - Seoul-Trojan
       - DIRECT
 
 rules:
