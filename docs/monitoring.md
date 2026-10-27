@@ -24,7 +24,7 @@
 
 | 监控 | 说明 |
 |---|---|
-| `主页入口 HTTP（Nginx 80）` | 本机 Nginx 80，301 跳转也算可达 |
+| `Nginx 80（本机入口）` | 本机 Nginx 80，301 跳转也算可达；不是 www 主页 HTTPS |
 | `QQQ 8443（管理）` | QQQ Dashboard；401 是 Basic Auth，正常 |
 | `Beszel API` | Beszel 健康接口 |
 | `Uptime Kuma` | 状态页自身 |
