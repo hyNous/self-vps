@@ -63,6 +63,21 @@ curl --http1.1 -s -o /dev/null -w 'ws=%{http_code}\n' \
 
 Cloudflare Public Hostname 的 Service 必须是 HTTP，不能填 HTTPS；`cdn`/`edge` 不要加 Access，`ssh` 建议加 Access。
 
+当前独立 Tunnel：
+
+~~~text
+cloudflared-home.service
+  www.hynous.cc / hynous.cc -> http://127.0.0.1:8080
+
+cloudflared-qqq.service
+  qqq.hynous.cc -> http://127.0.0.1:8444
+  8444 是本机 HTTP 桥 -> https://127.0.0.1:8443 -> QQQ Dashboard
+~~~
+
+QQQ 的 HTTP 桥用于避开 Cloudflare 对 HTTPS origin 证书的 1034 判定；桥只监听 127.0.0.1。
+
+`sub`/`sync` 已从 Nginx 主别名移除，80 端口返回 444；如果 Cloudflare 上仍能看到这两个 DNS A 记录，需要单独删除 DNS。
+
 ## Docker 与监控
 
 监控可能分别部署在：

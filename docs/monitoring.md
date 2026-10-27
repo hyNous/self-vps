@@ -24,8 +24,10 @@
 
 | 监控 | 说明 |
 |---|---|
+| `主页 www HTTPS` | 个人主页，经 `hynous-home` Tunnel 到 Nginx 8080 |
 | `Nginx 80（本机入口）` | 本机 Nginx 80，301 跳转也算可达；不是 www 主页 HTTPS |
-| `QQQ 8443（管理）` | QQQ Dashboard；401 是 Basic Auth，正常 |
+| `QQQ 8443（管理）` | QQQ Dashboard 的直连 8443；401 是 Basic Auth |
+| `QQQ Tunnel 443` | QQQ 经 `hynous-qqq` Tunnel 的标准 443；401 是 Basic Auth |
 | `Beszel API` | Beszel 健康接口 |
 | `Uptime Kuma` | 状态页自身 |
 
