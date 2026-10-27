@@ -40,6 +40,8 @@ if [[ -f "$vless_env" ]]; then
   # shellcheck disable=SC1090
   source "$vless_env"
 fi
+# Support the older env naming used by some deployments.
+CDN_DOMAIN="${CDN_DOMAIN:-${VLESS_PUBLIC_HOST:-}}"
 
 for service in ssh nginx xray certbot.timer; do
   check_service "$service"
