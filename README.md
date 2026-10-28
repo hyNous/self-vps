@@ -156,7 +156,7 @@ curl.exe -x http://127.0.0.1:7890 https://api.ipify.org
 - `status.hynous.cc` 是统一状态页，根路径会跳到 `/status/hynous`；
 - `monitor.hynous.cc` 是 Beszel 资源面板；
 - Reality 的 TCP 443 只能说明端口开放，不能说明协议可用；端到端探测应通过客户端或独立的 Xray/sing-box 探针完成；
-- 仓库的 `scripts/client-probe.ps1` 是 Windows 客户端探针，通过 FlClash 的 7890 端口验证真实出口并上报 Uptime Kuma；
+- 仓库的 `scripts/client-probe.ps1` 是 Windows 客户端探针，默认只手动运行，不创建计划任务；它通过 FlClash 的 7890 端口验证真实出口；
 - 具体颜色含义和红灯处理顺序见[监控与状态页说明](docs/monitoring.md)。
 
 ## 运维与迁移

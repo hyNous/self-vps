@@ -18,7 +18,6 @@
 | `Reality 443（本机）` | 本机 Xray Reality 端口；红灯表示直连节点不可用 |
 | `Reality 443（外部 TCP）` | 从外部域名检查 443；只能证明端口开放 |
 | `CDN 443（Cloudflare）` | Cloudflare Tunnel → Nginx 8082 的 HTTP 面具页 |
-| `端到端探针（客户端）` | 从你的 Windows 客户端经 FlClash 访问外网；这是最有价值的一层 |
 
 ### 网站与管理
 
@@ -35,47 +34,33 @@
 
 - **绿色**：最近一次探测成功。
 - **红色**：最近一次探测失败；先看“消息”里的状态码/超时。
-- **灰色/Pending**：新监控尚未完成第一次探测，或 Push 监控还没收到客户端上报。
+- **灰色/Pending**：新监控尚未完成第一次探测。
 
 红灯处理顺序：
 
 1. `Reality 443（本机/外部）` 红：先看 `systemctl status xray`，再在 FlClash 切到 `CDN` 备用；
 2. `CDN 443` 红：检查 `cloudflared`、Nginx 8082、Xray 10086；
-3. `端到端探针` 红：检查 FlClash 是否运行、7890 是否监听、TUN/系统代理设置；
-4. `主页入口` 红：检查 Nginx 80 和主页 8080；
-5. `QQQ 8443` 红：检查 `qqq-proxy.service` 和 8000；
-6. `Beszel/Uptime Kuma` 红：先看 Docker `DOCKER` 链和 3001/8090 端口。
+3. `Nginx 80（本机入口）` 红：检查 Nginx 80 和主页 8080；
+4. `QQQ 8443`/`QQQ Tunnel 443` 红：检查 `qqq-proxy.service`、8444 桥和 8000；
+5. `Beszel/Uptime Kuma` 红：先看 Docker `DOCKER` 链和 3001/8090 端口。
 
-## 端到端探针
+## 手动端到端探针（默认关闭）
 
-Windows 客户端脚本在仓库的 `scripts/client-probe.ps1`。它通过 `127.0.0.1:7890` 请求 `https://api.ipify.org`，成功时上报出口 IP，失败时上报 down。
+Windows 客户端脚本仍在仓库的 `scripts/client-probe.ps1`，但**默认不创建计划任务**，避免每 5 分钟弹出命令行窗口。
 
-推送地址不放进仓库，保存在：
-
-```text
-%APPDATA%\self-vps\probe.url
-```
-
-计划任务名称：
-
-```text
-SelfVPS-EndToEnd-Probe
-```
-
-手动运行：
+需要手动验证时可运行：
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\hynous\vps\scripts\client-probe.ps1
 ```
 
-手动触发计划任务：
+它通过 `127.0.0.1:7890` 请求 `https://api.ipify.org`，成功时上报出口 IP，失败时上报 down。推送地址保存在：
 
-```powershell
-Start-ScheduledTask -TaskName 'SelfVPS-EndToEnd-Probe'
-Get-ScheduledTaskInfo -TaskName 'SelfVPS-EndToEnd-Probe'
+```text
+%APPDATA%\self-vps\probe.url
 ```
 
-这个探针依赖 FlClash 正在运行且 7890 可用。FlClash 关闭时它会变红，这是预期行为，不代表 VPS 一定故障。
+不要再用 `powershell.exe -WindowStyle Hidden` 直接注册计划任务；这种启动方式会短暂弹出控制台窗口。若以后确实需要自动运行，使用 VBScript/`wscript.exe` 无窗口包装，或把探针放到服务器侧。
 
 ## Docker 自动检测/恢复
 
