@@ -63,3 +63,7 @@ temp/
 backups/
 optional/monitoring/.env
 optional/monitoring/data/
+
+# Local proxy-provider cache and FlClash cache
+providers/
+cache.db
