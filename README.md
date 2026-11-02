@@ -1,6 +1,6 @@
 # self-vps
 
-在 Ubuntu 24.04 上部署 Xray **VLESS + TCP + Reality + XTLS Vision** 直连节点，并可选配置 VLESS/WS over Cloudflare Tunnel 作为 CDN 备用入口。Nginx 只负责 80 端口、ACME 和本机 8080/8082 回环服务；UFW、BBR 和可选的 key-only SSH 加固随核心节点配置。Beszel 与 Uptime Kuma 是独立监控模块。
+在 Ubuntu 24.04 上部署 Xray **VLESS + TCP + Reality + XTLS Vision** 直连节点，并可选配置 VLESS/WS over Cloudflare Tunnel 作为 CDN 备用入口。Nginx 只负责 80 端口、ACME 和本机 8080/8082 回环服务；UFW、BBR 和可选的 key-only SSH 加固随核心节点配置。Beszel 与 Uptime Kuma 是独立监控模块。也可以叠加机场前置 + 自建 SS 落地，把最终出口固定在本机，见[机场前置与双客户端配置](docs/front-chain.md)。
 
 > **Beta**：仓库脚本经过静态检查，但新的 Reality 安装流程仍应先在测试 VPS 上完整跑一遍，并保留云厂商快照和 SSH 控制台。
 
@@ -8,6 +8,10 @@
 
 ~~~text
 FlClash / Mihomo（建议开启 TUN）
+      │
+      ├─ 机场节点（前置）
+      │     ▼
+      │   Shadowsocks 8445 ──→ freedom / VPS 直接出站
       │
       ├─ VLESS + Reality 443（直连，xtls-rprx-vision）
       │     ▼
@@ -163,6 +167,7 @@ curl.exe -x http://127.0.0.1:7890 https://api.ipify.org
 
 - [日常运维、升级与回滚](docs/operations.md)
 - [监控与状态页说明](docs/monitoring.md)
+- [机场前置与双客户端配置](docs/front-chain.md)
 - [VPS 或域名迁移](docs/migration.md)
 - [常见故障排查](docs/troubleshooting.md)
 
@@ -209,6 +214,7 @@ sudo bash scripts/verify.sh
 - 443 归 Reality，普通网站 HTTPS 需要额外设计。
 - Reality `dest` 是固定目标；目标 IP、SNI 或证书不匹配时会出现握手 EOF，需要调整 `REALITY_DEST`/`REALITY_SERVER_NAME`。
 - Cloudflare 免费线路在中国大陆的带宽和稳定性有限，不能保证跑满 VPS 套餐带宽。
+- 机场前置链路的 UDP/QUIC 能力取决于具体机场节点，不稳定时需要回退到阻断 QUIC 的 TCP 配置。
 - Uptime Kuma 监控项和 Beszel 首次配对仍需通过 Web UI 完成。
 - 自动恢复仅覆盖备份脚本收录的路径，不是整机灾难恢复。
 - TUN、规则分流和 FlClash 的本地设置不在服务端脚本内。

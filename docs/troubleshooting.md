@@ -132,6 +132,27 @@ curl.exe -x http://127.0.0.1:7890 https://api.ipify.org
 
 如果服务端完全没有客户端请求，问题在 FlClash 本地配置/规则/DNS，不在 VPS。
 
+## Claude Desktop 提示地区不支持
+
+现象：Reality 直连正常，切到机场前置链路后 Claude Desktop 报 `Claude isn't available in your region` 或 HTTP 403 `region_unavailable`。
+
+Claude 按实际出口 IP 判断地区，不是按系统时区或账号注册地。Chromium/Electron 会优先 HTTP/3（QUIC = UDP 443）；如果 SS 链路只承载 TCP，QUIC 可能没有走完整链路，出口就不再是 VPS。
+
+排查顺序：
+
+1. 确认 TCP 出口：
+
+~~~powershell
+curl.exe -sS -x http://127.0.0.1:7890 https://www.cloudflare.com/cdn-cgi/trace
+~~~
+
+看 `ip=` 和 `loc=` 是否为 VPS 所在地。
+
+2. 如果 TCP 出口正确，改用阻断 UDP/443 的 `seoul-tcp.yaml`，并从系统托盘彻底退出 Claude Desktop 后重启。
+3. 需要 HTTP/3 时使用 `seoul-udp.yaml`，前提是 SS 服务端 `network: tcp,udp`、防火墙和云安全组都放行 UDP，且当前机场节点支持 UDP。
+
+`curl` 只能证明 TCP 出口，不能证明 QUIC 也经过链路。详细链路和验证方法见[机场前置与双客户端配置](front-chain.md)。
+
 ## SSH 提示 Permission denied (publickey)
 
 这是预期的 key-only 行为：
